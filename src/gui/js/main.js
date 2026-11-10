@@ -21,6 +21,9 @@ if (window.__TAURI__) {
 }
 
 const DEFAULT_LOCALE_PATH = `./locales/en.json`;
+// Mirrors OBJECT_SKIP_SCALE in src/args.rs.
+const OBJECT_SKIP_SCALE = 0.3;
+let buildingsGeojson = null;
 
 // Track current bbox selection info localization key for language changes
 let currentBboxSelectionKey = "select_area_prompt";
@@ -48,6 +51,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupProgressListener();
   await initSavePath();
   initSettings();
+  initBuildingsGeojsonPicker();
   // Before the store restores values, so the cards follow the restored ones.
   initSettingsLayout();
   initDialogs();
@@ -1243,8 +1247,6 @@ function initSettings() {
   window.openSettings = openSettings;
   window.closeSettings = closeSettings;
 
-  // Mirrors OBJECT_SKIP_SCALE in src/args.rs
-  const OBJECT_SKIP_SCALE = 0.3;
   const scaleObjectsNote = document.getElementById("scale-objects-note");
 
   function refreshScaleDisplay() {
@@ -2487,6 +2489,27 @@ function initSavePathRow({ storageKey, inputId, browseId, get, set }) {
   }
 }
 
+function initBuildingsGeojsonPicker() {
+  const name = document.getElementById('buildings-geojson-name');
+  const pick = document.getElementById('buildings-geojson-pick');
+  const clear = document.getElementById('buildings-geojson-clear');
+  const setFile = (path) => {
+    buildingsGeojson = path;
+    name.textContent = basenameFromPath(path);
+    name.title = path || '';
+    clear.disabled = !path;
+  };
+  pick.addEventListener('click', async () => {
+    try {
+      const picked = await invoke('gui_pick_buildings_geojson');
+      if (picked) setFile(picked);
+    } catch (error) {
+      console.error('Building file picker failed:', error);
+    }
+  });
+  clear.addEventListener('click', () => setFile(null));
+}
+
 /**
  * Validates and processes bounding box coordinates input
  * Supports both comma and space-separated formats
@@ -3626,7 +3649,7 @@ function liveGameMessages() {
   };
 }
 
-function showLiveRefusal(text) {
+function showGenerationRefusal(text) {
   const info = document.getElementById('progress-info');
   if (!info) return;
   info.textContent = text;
@@ -3636,7 +3659,7 @@ function showLiveRefusal(text) {
 async function startLive() {
   if (liveActive()) return;
   if (!savePath) {
-    showLiveRefusal(oneWorldText('one_world_no_save_path', 'Set the Minecraft saves folder in Settings first'));
+    showGenerationRefusal(oneWorldText('one_world_no_save_path', 'Set the Minecraft saves folder in Settings first'));
     return;
   }
   // A lock is left to the backend: it may be a server an earlier Arnis left running.
@@ -3694,6 +3717,7 @@ async function startLive() {
     fieldPreset: settings.fieldPreset,
     canopyHeightEnabled: settings.canopyHeightEnabled,
     overtureEnabled: settings.overtureEnabled,
+    buildingsGeojson: settings.buildingsGeojson,
     use3dEnabled: settings.use3dEnabled,
     awsOnlyElevation: settings.awsOnlyElevation,
     bakeLightingEnabled: settings.bakeLightingEnabled,
@@ -3924,6 +3948,7 @@ function readGenerationSettings(oneWorld) {
     fieldPreset: segment("field-preset-group", "fieldPreset", "patchwork"),
     canopyHeightEnabled: checked("canopy-height-toggle"),
     overtureEnabled: checked("overture-toggle"),
+    buildingsGeojson,
     use3dEnabled: checked("use-3d-toggle"),
     disableHeightLimit: disableHeightLimit,
     awsOnlyElevation: checked("aws-only-elevation-toggle"),
@@ -3952,6 +3977,20 @@ async function startGeneration() {
   }
   if (generationButtonEnabled === false) {
     return;
+  }
+  if (buildingsGeojson) {
+    if (isLiveMode() || isOneWorldEnabled()) {
+      showGenerationRefusal(window.localization?.buildings_geojson_standalone ||
+        'Clear the local building file to use One World or Live mode.');
+      return;
+    }
+    const mode = document.getElementById('generation-mode-select').value;
+    const scale = Number(document.getElementById('scale-value-slider').value);
+    if (selectedCelestialBody !== 'earth' || mode === 'terrain-only' || scale < OBJECT_SKIP_SCALE) {
+      showGenerationRefusal(window.localization?.buildings_geojson_needs_buildings ||
+        'Local buildings need an Earth map at scale 0.3 or above and a mode that includes buildings.');
+      return;
+    }
   }
   // One World and Live keep their areas as rectangles of whole chunks.
   if (selectedShapes && (isLiveMode() || isOneWorldEnabled())) {

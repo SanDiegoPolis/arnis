@@ -19,6 +19,30 @@ Download the [latest release](https://github.com/louis-e/arnis/releases/) or [co
 Choose your area on the map using the rectangle tool, then simply click on <i>Start Generation</i>!
 Additionally, you can customize various generation settings, such as world scale, spawn point, or building interior generation.
 
+### Use local building data
+
+If the default map is missing buildings or has inaccurate heights, go to **Settings → Generation → Local Building GeoJSON**. This replaces OpenStreetMap and Overture building footprints across the selected area. Choose an area fully covered by your file. Roads and other map features come from OpenStreetMap.
+
+Use WGS84 GeoJSON with longitude first, including `Polygon` or `MultiPolygon` footprints. For height above ground in metres, use `height` or `height_m`. For storeys, use `num_floors` or `building:levels`. The importer also reads `pred_h_r` and `Floor` from the [CMAB China building dataset](https://doi.org/10.6084/m9.figshare.27992417.v2). Arnis estimates the height when the file supplies neither height nor storeys.
+
+You can combine footprints from multiple sources in one file. If the local source only covers part of a landmark, include its more complete footprint in the import layer. Copy heights between datasets only where the outlines match the same building.
+
+In QGIS, export the building layer as GeoJSON using **EPSG:4326 — WGS 84**. If you use GDAL, you can convert a Shapefile with the command below. For a city-wide dataset, export just the neighbourhood you want to generate. If the source uses GCJ-02 or BD-09, convert from that coordinate system to WGS84 before exporting.
+
+```sh
+ogr2ogr -t_srs EPSG:4326 -lco RFC7946=YES buildings.geojson buildings.shp
+```
+
+On the command line, use `--buildings-geojson` with a bounding box or a local OSM file. For example, for a neighbourhood in Shanghai:
+
+```sh
+arnis --output-dir "./saves" --bbox "31.232,121.489,31.243,121.505" --buildings-geojson buildings.geojson
+```
+
+Local building data is available for standalone Earth worlds with buildings enabled at scale 0.3 or above. For an offline map-data run, also pass `--file area.osm` to supply the roads and other features locally.
+
+For high-rise districts, the **Extend build height** setting or `--disable-height-limit` in Java Edition lets buildings exceed the vanilla height limit.
+
 ## 📚 Documentation
 
 <img src="assets/git/documentation.png" width="100%" alt="Banner">

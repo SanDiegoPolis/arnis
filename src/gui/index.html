@@ -550,6 +550,21 @@
                 </div>
 
                 <div class="settings-row setting-tile is-wide">
+                  <label for="buildings-geojson-pick" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-building"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading" data-localize="buildings_geojson">Local Building GeoJSON</span>
+                      <span class="setting-desc" data-localize="buildings_geojson_desc">Replaces OpenStreetMap and Overture building footprints. Use a WGS84 file covering the entire selection.</span>
+                      <output id="buildings-geojson-name" class="building-file-name" aria-live="polite"></output>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <button type="button" id="buildings-geojson-pick" class="settings-action-button" data-localize="buildings_geojson_pick">Choose File</button>
+                    <button type="button" id="buildings-geojson-clear" class="settings-action-button" data-localize="buildings_geojson_clear" disabled>Clear</button>
+                  </div>
+                </div>
+
+                <div class="settings-row setting-tile is-wide">
                   <label for="interior-toggle" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-house"></use></svg>
                     <span class="setting-text">

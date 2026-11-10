@@ -120,6 +120,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_get_default_luanti_save_path,
             gui_set_save_path,
             gui_pick_save_directory,
+            gui_pick_buildings_geojson,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -269,6 +270,7 @@ struct LiveStartOptions {
     field_preset: String,
     canopy_height_enabled: bool,
     overture_enabled: bool,
+    buildings_geojson: Option<PathBuf>,
     use_3d_enabled: bool,
     aws_only_elevation: bool,
     bake_lighting_enabled: bool,
@@ -289,6 +291,9 @@ struct LiveStartOptions {
 fn gui_live_start(options: LiveStartOptions) -> Result<(), String> {
     use crate::live::server;
     use clap::Parser;
+    if options.buildings_geojson.is_some() {
+        return Err("Clear the local building file to use Live mode.".to_string());
+    }
     let mut slot = LIVE_SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if slot.as_ref().is_some_and(|s| !s.is_finished()) {
         return Err("Live mode is already running.".to_string());
@@ -642,6 +647,14 @@ fn gui_pick_save_directory(start_path: String) -> Result<String, String> {
         Some(folder) => Ok(folder.display().to_string()),
         None => Ok(start_path),
     }
+}
+
+/// Opens a native picker for a local building footprint layer.
+#[tauri::command]
+fn gui_pick_buildings_geojson() -> Option<PathBuf> {
+    FileDialog::new()
+        .add_filter("GeoJSON", &["geojson", "json"])
+        .pick_file()
 }
 
 /// Creates a new Java Edition world in the given base save directory.
@@ -1701,6 +1714,7 @@ fn gui_start_generation(
     field_preset: String,
     canopy_height_enabled: bool,
     overture_enabled: bool,
+    buildings_geojson: Option<PathBuf>,
     use_3d_enabled: bool,
     disable_height_limit: bool,
     aws_only_elevation: bool,
@@ -1784,6 +1798,11 @@ fn gui_start_generation(
 
     // A One World is resolved inside the worker, once `Args` exist. Refused rather than
     // dropped: `selected_world` is then the saves folder, which a new-world cleanup deletes.
+    if one_world && buildings_geojson.is_some() {
+        let e = "Clear the local building file to use One World.".to_string();
+        emit_gui_progress_update(progress::MESSAGE_ONLY, &format!("Error! {e}"));
+        return Err(e);
+    }
     if let Err(e) = one_world_request(one_world, &world_format, &celestial_body_name) {
         emit_gui_error(&e);
         return Err(e);
@@ -2016,7 +2035,8 @@ fn gui_start_generation(
                     &field_preset,
                 ),
                 canopy_height: canopy_height_enabled,
-                overture: overture_enabled,
+                overture: overture_enabled && buildings_geojson.is_none(),
+                buildings_geojson,
                 // Auto picks whichever transport is cheaper for the area. The
                 // two are not bit-identical - tiles quantise coordinates to a
                 // 0.4 m lattice and keep the largest ring of a multipolygon the
@@ -2097,6 +2117,25 @@ fn gui_start_generation(
             // above) has to apply the body rules on its own.
             crate::args::apply_body_defaults(&mut args);
             crate::args::apply_feature_needs(&mut args);
+
+            let local_buildings = if let Some(path) = &args.buildings_geojson {
+                let loaded = if args.skip_osm() || args.skip_objects() {
+                    Err("Local buildings need an Earth map at scale 0.3 or above and a mode that includes buildings.".to_string())
+                } else {
+                    emit_gui_progress_update(0.0, "Reading local building GeoJSON...");
+                    crate::local_buildings::load(path, &bbox).map_err(|e| e.to_string())
+                };
+                match loaded {
+                    Ok(buildings) => Some(buildings),
+                    Err(e) => {
+                        eprintln!("{e}");
+                        emit_gui_progress_update(progress::MESSAGE_ONLY, &format!("Error! {e}"));
+                        return Err(e);
+                    }
+                }
+            } else {
+                None
+            };
 
             let mut one_world_extending = false;
             if one_world {
@@ -2362,7 +2401,7 @@ fn gui_start_generation(
                     }
                 });
                 let ground_handle = s.spawn(|| ground::generate_ground_data(&args, bbox, &peaks));
-                let fetch_result = retrieve_data::fetch_osm_data(
+                let mut fetch_result = retrieve_data::fetch_osm_data(
                     bbox,
                     args.scale,
                     args.debug,
@@ -2371,6 +2410,9 @@ fn gui_start_generation(
                     &args.osm_tiles_url,
                     !args.no_tile_archive,
                 );
+                if let (Ok(raw_data), Some(buildings)) = (&mut fetch_result, local_buildings) {
+                    raw_data.replace_buildings(buildings);
+                }
                 // The terrain thread waits on this before fitting its height range. Overture's
                 // building heights follow once it is in, for the thread to wait on only if
                 // needed. Without OSM there is nothing to follow, so the sender goes now.

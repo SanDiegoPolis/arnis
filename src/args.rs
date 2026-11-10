@@ -39,6 +39,11 @@ pub struct Args {
     #[arg(long, group = "location")]
     pub file: Option<String>,
 
+    /// Replace all buildings in the selected area with a local WGS84 GeoJSON file.
+    /// The file should cover the entire selection. Other features still use OSM.
+    #[arg(long, value_name = "FILE")]
+    pub buildings_geojson: Option<PathBuf>,
+
     /// Save the OSM data this run uses to a file (Overpass JSON), to generate from it again
     /// later with --file
     #[arg(long, group = "location")]
@@ -994,6 +999,19 @@ pub fn resolve_shapes(args: &mut Args) -> Result<(), String> {
 }
 
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    if args.buildings_geojson.is_some() {
+        if args.one_world || args.live.live || args.cave_zone_map.is_some() || args.mapillary_probe
+        {
+            return Err("--buildings-geojson requires a standalone world generation run.".into());
+        }
+        if args.skip_objects() || args.skip_osm() {
+            return Err(
+                "--buildings-geojson requires an Earth mode and scale that generate buildings."
+                    .into(),
+            );
+        }
+    }
+
     // One World and live mode track their areas as rectangles of whole chunks.
     if args.shapes.is_some() && (args.one_world || args.live.live) {
         return Err(

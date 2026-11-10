@@ -38,6 +38,7 @@ mod ground_generation;
 mod land_cover;
 mod landmarks;
 mod live;
+mod local_buildings;
 mod luanti_block_map;
 mod map_item;
 mod map_item_palette;
@@ -433,6 +434,19 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
         }
     }
 
+    let local_buildings = args.buildings_geojson.as_ref().map(|path| {
+        local_buildings::load(path, &effective_bbox).unwrap_or_else(|e| {
+            eprintln!(
+                "{} Could not load building GeoJSON: {e}",
+                "Error:".red().bold()
+            );
+            std::process::exit(1);
+        })
+    });
+    if local_buildings.is_some() {
+        args.overture = false;
+    }
+
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
     if args.one_world {
@@ -652,7 +666,7 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
         // A local file was already parsed up front (to derive the bbox), so reuse that data.
         // A run without OSM carries no objects. Otherwise fetch from Overpass, in parallel with
         // the Overture and land-cover fetches spawned above.
-        let raw_data = if skip_osm {
+        let mut raw_data = if skip_osm {
             osm_parser::OsmData::empty()
         } else if let Some(data) = preloaded_osm.take() {
             data
@@ -672,6 +686,19 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
             })
         };
         bench.report("osm_fetch", t.elapsed());
+        if let Some(buildings) = local_buildings {
+            let count = buildings
+                .iter()
+                .filter(|element| {
+                    element
+                        .tags
+                        .as_ref()
+                        .is_some_and(|tags| tags.contains_key("building"))
+                })
+                .count();
+            raw_data.replace_buildings(buildings);
+            println!("  Loaded {count} building footprints from local GeoJSON");
+        }
         // The terrain thread waits on this before fitting its height range. Overture's
         // building heights follow once it is in, for the thread to wait on only if needed.
         let _ = peak_tx.send(crate::elevation::TerrainHints::from_osm(&raw_data, &args));

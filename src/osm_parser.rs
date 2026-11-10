@@ -190,6 +190,24 @@ impl OsmData {
         &self.elements
     }
 
+    /// Replace the building layer while keeping shared nodes and ways for other features.
+    pub(crate) fn replace_buildings(&mut self, incoming: Vec<OsmElement>) {
+        self.elements
+            .retain(|element| !crate::local_buildings::is_imported(element.id));
+        for element in &mut self.elements {
+            if let Some(tags) = element.tags.as_mut() {
+                tags.remove("building");
+                tags.remove("building:part");
+                if element.r#type == "relation"
+                    && tags.get("type").is_some_and(|value| value == "building")
+                {
+                    tags.remove("type");
+                }
+            }
+        }
+        self.elements.extend(incoming);
+    }
+
     /// Object-free dataset, used by terrain-only runs that never query Overpass.
     pub fn empty() -> Self {
         OsmData {
@@ -4011,6 +4029,36 @@ mod osm_xml_tests {
             .iter()
             .find(|e| e.r#type == kind && e.id == id)
             .unwrap_or_else(|| panic!("missing {kind} {id}"))
+    }
+
+    #[test]
+    fn local_buildings_replace_building_tags_and_keep_shared_map_features() {
+        let (mut data, _) = parse(
+            r#"<osm version="0.6">
+              <node id="1" lat="31.23" lon="121.49"/>
+              <node id="2" lat="31.24" lon="121.50"/>
+              <way id="3"><nd ref="1"/><nd ref="2"/>
+                <tag k="building:part" v="yes"/><tag k="highway" v="pedestrian"/>
+              </way>
+              <relation id="4"><member type="way" ref="3" role="outline"/>
+                <tag k="type" v="building"/><tag k="building" v="yes"/>
+              </relation>
+            </osm>"#,
+        );
+        let (incoming, _) = parse(
+            r#"<osm version="0.6"><way id="5">
+              <tag k="building" v="yes"/><tag k="height" v="18"/>
+            </way></osm>"#,
+        );
+        data.replace_buildings(incoming.elements);
+
+        let way = find(&data, "way", 3);
+        assert_eq!(way.nodes.as_deref(), Some([1, 2].as_slice()));
+        let tags = way.tags.as_ref().unwrap();
+        assert_eq!(tags.get("highway").map(String::as_str), Some("pedestrian"));
+        assert!(!tags.contains_key("building:part"));
+        assert!(find(&data, "relation", 4).tags.as_ref().unwrap().is_empty());
+        assert_eq!(find(&data, "way", 5).tags.as_ref().unwrap()["height"], "18");
     }
 
     // Testing every element kind: tagged node, bare node, way (nd refs + tags),

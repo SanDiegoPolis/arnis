@@ -2359,7 +2359,10 @@ fn building_to_processed_way(
 }
 
 /// Map Overture subtype/class to OSM building tag value.
-fn overture_class_to_osm_building<'a>(subtype: Option<&'a str>, class: Option<&'a str>) -> &'a str {
+pub(crate) fn overture_class_to_osm_building<'a>(
+    subtype: Option<&'a str>,
+    class: Option<&'a str>,
+) -> &'a str {
     // Try class first (more specific)
     if let Some(class) = class {
         match class {

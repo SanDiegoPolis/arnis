@@ -950,6 +950,19 @@ label[for].setting-label {
   color: var(--ui-accent);
 }
 
+.settings-page .settings-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.building-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ui-text);
+}
+
 .github-link,
 .buymeacoffee-link,
 .discord-link {
